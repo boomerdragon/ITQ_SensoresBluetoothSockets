@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">Sensores Bluetooth Sockets</string>
+    <string name="estado_p2p">Estado P2P: Desconectado</string>
+    <string name="estado_servidor_web">Servidor Web HTTP: Iniciando...</string>
+    <string name="inertial_reading_p2p">TRANSMITIR LECTURA INERCIAL P2P</string>
+    <string name="inertial_reading">X: 0.00 | Y: 0.00 | Z: 0.00</string>
+    <string name="giroscopio">🔄 GIROSCOPIO (rad/s)</string>
+    <string name="title">🎮 STAGE 5–23: HARDWARE SENSORS &amp; BLUETOOTH P2P</string>
+    <string name="accelerometer">📐 ACELERÓMETRO (m/s²)</string>
+    <string name="accelerometer_values">X: 0.00 | Y: 0.00 | Z: 0.00</string>
+    <string name="accelerometer_magnitude">Magnitud: 9.81 m/s²</string>
+    <string name="node_emitter">NODO: 127.0.0.1</string>
+    <string name="node_emitter_format">NODO: %1$s</string>
+    <string name="channel_type">CANAL: TCP</string>
+    <string name="channel_type_format">CANAL: %1$s</string>
+    <string name="telemetry_payload">Payload de telemetría...</string>
+    <string name="accelerometer_values_format">X: %.2f | Y: %.2f | Z: %.2f</string>
+    <string name="accelerometer_magnitude_format">Magnitud: %.2f m/s²</string>
+    <string name="estado_bluetooth">Servidor Bluetooth SPP: Iniciando...</string>
+    <string name="transmit_bluetooth">TRANSMITIR VÍA BLUETOOTH SPP</string>
+    <string name="select_bluetooth_device">Seleccionar Dispositivo Bluetooth</string>
+    <string name="no_paired_devices">No hay dispositivos Bluetooth emparejados</string>
+</resources>
