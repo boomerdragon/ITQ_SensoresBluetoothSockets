@@ -23,12 +23,24 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+/**
+ * 📱 Pantalla Principal de la Aplicación (MainActivity)
+ * 
+ * En el patrón de diseño MVVM, la Actividad actúa únicamente como la "Vista" (View).
+ * Su responsabilidad se limita a:
+ * 1. Inicializar los componentes gráficos de la interfaz (TextView, Button, RecyclerView).
+ * 2. Observar los cambios publicados por el ViewModel mediante LiveData y refrescar la pantalla.
+ * 3. Gestionar permisos en tiempo de ejecución (Runtime Permissions) requeridos por el sistema.
+ */
 public class MainActivity extends AppCompatActivity {
 
+    // 🔢 Código único de solicitud para identificar la respuesta de permisos de Android
     private static final int PERMISSION_REQUEST_CODE = 1001;
 
+    // 🏛️ Instancia del ViewModel desacoplado
     private SensoresBluetoothViewModel viewModel;
 
+    // 📺 Componentes visuales de la interfaz gráfica
     private TextView tvValoresAcelerometro;
     private TextView tvMagnitudAcelerometro;
     private TextView tvValoresGiroscopio;
@@ -38,13 +50,19 @@ public class MainActivity extends AppCompatActivity {
     private Button btnEnviarP2P;
     private Button btnEnviarBluetooth;
 
+    // 💾 Almacena el último valor legible capturado del acelerómetro para ser transmitido
     private String ultimaLecturaAcelerometro = "Sin Datos";
 
+    /**
+     * 🚀 Método del Ciclo de Vida: onCreate
+     * Se ejecuta una sola vez al construir e iniciar la Actividad.
+     */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+        setContentView(R.layout.activity_main); // Enlaza el diseño XML 'activity_main.xml'
 
+        // 1. Vinculación de vistas mediante sus IDs declarados en el XML
         tvValoresAcelerometro = findViewById(R.id.tvValoresAcelerometro);
         tvMagnitudAcelerometro = findViewById(R.id.tvMagnitudAcelerometro);
         tvValoresGiroscopio = findViewById(R.id.tvValoresGiroscopio);
@@ -55,12 +73,17 @@ public class MainActivity extends AppCompatActivity {
         btnEnviarBluetooth = findViewById(R.id.btnEnviarBluetooth);
         RecyclerView rvMensajesP2P = findViewById(R.id.rvMensajesP2P);
 
+        // 2. Configuración del RecyclerView para la lista de paquetes telemétricos
         rvMensajesP2P.setLayoutManager(new LinearLayoutManager(this));
         ProyectoAdapter adapter = new ProyectoAdapter();
         rvMensajesP2P.setAdapter(adapter);
 
+        // 3. Inicialización del ViewModel mediante ViewModelProvider
         viewModel = new ViewModelProvider(this).get(SensoresBluetoothViewModel.class);
 
+        // 4. Suscripción a Observadores LiveData (Actualización automática de la UI)
+        
+        // Observador de lecturas del Acelerómetro
         viewModel.getAcelerometroData().observe(this, dto -> {
             if (dto != null) {
                 String txt = String.format(Locale.getDefault(), "X: %.2f | Y: %.2f | Z: %.2f", dto.getX(), dto.getY(), dto.getZ());
@@ -70,33 +93,45 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        // Observador de lecturas del Giroscopio
         viewModel.getGiroscopioData().observe(this, dto -> {
             if (dto != null) {
                 tvValoresGiroscopio.setText(String.format(Locale.getDefault(), "X: %.2f | Y: %.2f | Z: %.2f", dto.getX(), dto.getY(), dto.getZ()));
             }
         });
 
+        // Observador del historial de paquetes P2P recibidos
         viewModel.getMensajesP2P().observe(this, adapter::setPaquetes);
 
+        // Observadores de estados de los servidores de red
         viewModel.getEstadoConexion().observe(this, estado -> tvEstadoServidor.setText(estado));
         viewModel.getEstadoServidorWeb().observe(this, estadoWeb -> tvEstadoServidorWeb.setText(estadoWeb));
         viewModel.getEstadoBluetooth().observe(this, estadoBt -> tvEstadoBluetooth.setText(estadoBt));
 
+        // 5. Verificación de permisos en tiempo de ejecución
         verificarYSolicitarPermisos();
 
+        // 6. Arranque de los servidores de comunicación inalámbrica
         viewModel.iniciarServidorTcp();
         viewModel.iniciarServidorHttp();
         viewModel.iniciarServidorBluetooth();
 
-        btnEnviarP2P.setOnClickListener(v -> viewModel.transmitirPaqueteP2P("127.0.0.1", "Telemetría Acelerómetro: " + ultimaLecturaAcelerometro));
+        // 7. Configuración de oyentes (Listeners) para los botones de acción
+        btnEnviarP2P.setOnClickListener(v -> 
+            viewModel.transmitirPaqueteP2P("127.0.0.1", "Telemetría Acelerómetro: " + ultimaLecturaAcelerometro)
+        );
 
         btnEnviarBluetooth.setOnClickListener(v -> mostrarDialogoSeleccionBluetooth());
     }
 
+    /**
+     * 🛡️ Solicita permisos necesarios en tiempo de ejecución (Requerido en Android 12+ / API 31+)
+     */
     private void verificarYSolicitarPermisos() {
         List<String> permisosRequeridos = new ArrayList<>();
         permisosRequeridos.add(Manifest.permission.ACCESS_FINE_LOCATION);
 
+        // Android 12 introdujo permisos específicos explícitos para Bluetooth
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permisosRequeridos.add(Manifest.permission.BLUETOOTH_CONNECT);
             permisosRequeridos.add(Manifest.permission.BLUETOOTH_SCAN);
@@ -114,6 +149,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * 📶 Muestra un cuadro de diálogo flotante (AlertDialog) con la lista de dispositivos Bluetooth emparejados.
+     */
     private void mostrarDialogoSeleccionBluetooth() {
         Set<BluetoothDevice> dispositivos = viewModel.getDispositivosEmparejados();
         if (dispositivos.isEmpty()) {
@@ -142,6 +180,9 @@ public class MainActivity extends AppCompatActivity {
         builder.show();
     }
 
+    /**
+     * Callback invocado cuando el usuario responde al diálogo de concesión de permisos.
+     */
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -150,12 +191,20 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * 🔄 Ciclo de vida: onResume
+     * Se ejecuta cuando la app vuelve a estar visible en primer plano. Registra los sensores.
+     */
     @Override
     protected void onResume() {
         super.onResume();
         viewModel.activarSensores();
     }
 
+    /**
+     * ⏸️ Ciclo de vida: onPause
+     * Se ejecuta cuando la app pasa a segundo plano. Desregistra los sensores para evitar consumo innecesario de batería.
+     */
     @Override
     protected void onPause() {
         super.onPause();

@@ -2,6 +2,7 @@ package com.itq.sensoresbluetoothsocketsapp;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
@@ -33,24 +34,41 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Repositorio Singleton que orquesta la captura inercial de hardware (IMU)
- * y la comunicación inalámbrica local P2P vía Sockets TCP/IP y Bluetooth.
+ * 🗄️ Repositorio Central Singleton (SensoresBluetoothRepository)
+ *
+ * ¿Qué es un Singleton?
+ * Es un patrón de diseño que garantiza que SOLO EXISTA UNA INSTANCIA de esta clase en toda la app.
+ * Esto es ideal para gestionar los sensores físicos del teléfono y la infraestructura de red
+ * de manera centralizada sin duplicar conexiones ni hilos de ejecución.
+ *
+ * Responsabilidades:
+ * 1. Capturar datos del Acelerómetro y Giroscopio mediante SensorEventListener.
+ * 2. Ejecutar un Servidor TCP local (Puerto 8888).
+ * 3. Ejecutar un Servidor Web HTTP embebido (Puerto 8080) con API JSON y Dashboard web.
+ * 4. Ejecutar un Servidor/Cliente Bluetooth SPP (Serial Port Profile - UUID 00001101...).
  */
 public class SensoresBluetoothRepository implements SensorEventListener {
 
     private static final String TAG = "SENSORES_P2P_REPO";
     private static final int PUERTO_TCP = 8888;
     private static final int PUERTO_HTTP = 8080;
+
+    // 📶 UUID Estándar de Android para perfil de puerto serie Bluetooth Classic (SPP/RFCOMM)
     public static final UUID UUID_SPP_DEFAULT = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
+    // 🔒 Instancia única Singleton
     private static SensoresBluetoothRepository instancia;
 
+    // 📱 Administradores del Hardware de Android
     private final SensorManager sensorManager;
     private final Sensor acelerometro;
     private final Sensor giroscopio;
+    private final BluetoothManager bluetoothManager;
 
+    // 🧵 Pool de Hilos (ExecutorService) para ejecutar operaciones de red fuera del Hilo Principal (UI Thread)
     private final ExecutorService executorRed = Executors.newCachedThreadPool();
 
+    // 📊 Flujos de Datos Observables (MutableLiveData interna, LiveData externa)
     private final MutableLiveData<LecturaSensorDto> acelerometroLiveData = new MutableLiveData<>();
     private final MutableLiveData<LecturaSensorDto> giroscopioLiveData = new MutableLiveData<>();
     private final MutableLiveData<List<PaqueteP2PDto>> mensajesP2PLiveData = new MutableLiveData<>(new ArrayList<>());
@@ -58,17 +76,17 @@ public class SensoresBluetoothRepository implements SensorEventListener {
     private final MutableLiveData<String> estadoServidorWebLiveData = new MutableLiveData<>("Servidor Web HTTP En Espera");
     private final MutableLiveData<String> estadoBluetoothLiveData = new MutableLiveData<>("Bluetooth SPP En Espera");
 
-    private ServerSocket serverSocket;
+    // 🚦 Banderas booleanas de control para los hilos del servidor
     private boolean servidorActivo = false;
-
-    private ServerSocket serverSocketHttp;
     private boolean servidorHttpActivo = false;
-
-    private BluetoothServerSocket serverSocketBluetooth;
     private boolean servidorBluetoothActivo = false;
 
+    /**
+     * Constructor privado del Singleton. Inicializa los gestores de sensores y Bluetooth.
+     */
     private SensoresBluetoothRepository(Context context) {
         Context appContext = context.getApplicationContext();
+        bluetoothManager = (BluetoothManager) appContext.getSystemService(Context.BLUETOOTH_SERVICE);
         sensorManager = (SensorManager) appContext.getSystemService(Context.SENSOR_SERVICE);
         if (sensorManager != null) {
             acelerometro = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
@@ -79,12 +97,17 @@ public class SensoresBluetoothRepository implements SensorEventListener {
         }
     }
 
+    /**
+     * Accesor estático thread-safe para obtener la instancia única del Repositorio.
+     */
     public static synchronized SensoresBluetoothRepository getInstancia(Context context) {
         if (instancia == null) {
             instancia = new SensoresBluetoothRepository(context);
         }
         return instancia;
     }
+
+    // --- Métodos de Acceso a LiveData ---
 
     public LiveData<LecturaSensorDto> getAcelerometroData() { return acelerometroLiveData; }
     public LiveData<LecturaSensorDto> getGiroscopioData() { return giroscopioLiveData; }
@@ -93,9 +116,23 @@ public class SensoresBluetoothRepository implements SensorEventListener {
     public LiveData<String> getEstadoServidorWeb() { return estadoServidorWebLiveData; }
     public LiveData<String> getEstadoBluetooth() { return estadoBluetoothLiveData; }
 
+    /**
+     * Obtiene el adaptador Bluetooth de manera moderna (BluetoothManager en API 31+).
+     */
+    @SuppressWarnings("deprecation")
+    public BluetoothAdapter obtenerBluetoothAdapter() {
+        if (bluetoothManager != null) {
+            return bluetoothManager.getAdapter();
+        }
+        return BluetoothAdapter.getDefaultAdapter();
+    }
+
+    /**
+     * Retorna el conjunto de dispositivos Bluetooth previamente vinculados.
+     */
     public Set<BluetoothDevice> getDispositivosEmparejados() {
         try {
-            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+            BluetoothAdapter adapter = obtenerBluetoothAdapter();
             if (adapter != null && adapter.isEnabled()) {
                 return adapter.getBondedDevices();
             }
@@ -105,6 +142,9 @@ public class SensoresBluetoothRepository implements SensorEventListener {
         return Collections.emptySet();
     }
 
+    /**
+     * Obtiene la dirección IP local asignada al teléfono dentro de la red Wi-Fi.
+     */
     public String obtenerIpLocal() {
         try {
             List<NetworkInterface> interfaces = Collections.list(NetworkInterface.getNetworkInterfaces());
@@ -123,6 +163,9 @@ public class SensoresBluetoothRepository implements SensorEventListener {
         return "127.0.0.1";
     }
 
+    /**
+     * Registra la escucha de eventos de hardware para Acelerómetro y Giroscopio.
+     */
     public void registrarSensores() {
         if (sensorManager == null) return;
         if (acelerometro != null) {
@@ -133,11 +176,16 @@ public class SensoresBluetoothRepository implements SensorEventListener {
         }
     }
 
+    /**
+     * Desregistra los eventos de sensores para liberar recursos cuando la vista se pausa.
+     */
     public void desregistrarSensores() {
         if (sensorManager != null) {
             sensorManager.unregisterListener(this);
         }
     }
+
+    // --- Implementación de SensorEventListener (Captura Inercial) ---
 
     @Override
     public void onSensorChanged(SensorEvent event) {
@@ -147,6 +195,7 @@ public class SensoresBluetoothRepository implements SensorEventListener {
         float z = event.values[2];
 
         if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            // Magnitud escalar del vector aceleración: ||A|| = √(x² + y² + z²)
             float mag = (float) Math.sqrt(x * x + y * y + z * z);
             LecturaSensorDto dto = new LecturaSensorDto("ACELERÓMETRO", x, y, z, mag, ts);
             acelerometroLiveData.postValue(dto);
@@ -161,6 +210,8 @@ public class SensoresBluetoothRepository implements SensorEventListener {
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
     }
 
+    // --- Servidor P2P Socket TCP/IP (Puerto 8888) ---
+
     public void iniciarServidorTcp() {
         if (servidorActivo) return;
         servidorActivo = true;
@@ -168,7 +219,7 @@ public class SensoresBluetoothRepository implements SensorEventListener {
 
         executorRed.execute(() -> {
             try {
-                serverSocket = new ServerSocket(PUERTO_TCP);
+                ServerSocket serverSocket = new ServerSocket(PUERTO_TCP);
                 while (servidorActivo && !serverSocket.isClosed()) {
                     Socket clientSocket = serverSocket.accept();
                     BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
@@ -193,6 +244,8 @@ public class SensoresBluetoothRepository implements SensorEventListener {
         });
     }
 
+    // --- Servidor Web HTTP Embebido (Puerto 8080) ---
+
     public void iniciarServidorHttp() {
         if (servidorHttpActivo) return;
         servidorHttpActivo = true;
@@ -203,7 +256,7 @@ public class SensoresBluetoothRepository implements SensorEventListener {
 
         executorRed.execute(() -> {
             try {
-                serverSocketHttp = new ServerSocket(PUERTO_HTTP);
+                ServerSocket serverSocketHttp = new ServerSocket(PUERTO_HTTP);
                 while (servidorHttpActivo && !serverSocketHttp.isClosed()) {
                     Socket clientSocket = serverSocketHttp.accept();
                     executorRed.execute(() -> atenderPeticionHttp(clientSocket));
@@ -423,6 +476,8 @@ public class SensoresBluetoothRepository implements SensorEventListener {
         out.flush();
     }
 
+    // --- Emisión de Socket TCP ---
+
     public void enviarMensajeTcp(String destinoIp, String mensaje) {
         executorRed.execute(() -> {
             try (Socket socket = new Socket(destinoIp, PUERTO_TCP);
@@ -443,10 +498,12 @@ public class SensoresBluetoothRepository implements SensorEventListener {
         });
     }
 
+    // --- Servidor y Cliente Bluetooth SPP (Serial Port Profile) ---
+
     public void iniciarServidorBluetooth() {
         if (servidorBluetoothActivo) return;
 
-        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        BluetoothAdapter adapter = obtenerBluetoothAdapter();
         if (adapter == null) {
             estadoBluetoothLiveData.postValue("Bluetooth No Soportado");
             return;
@@ -460,9 +517,8 @@ public class SensoresBluetoothRepository implements SensorEventListener {
         estadoBluetoothLiveData.postValue("Servidor BT SPP Escuchando");
 
         executorRed.execute(() -> {
-            try {
-                serverSocketBluetooth = adapter.listenUsingRfcommWithServiceRecord("SensoresBluetoothP2P", UUID_SPP_DEFAULT);
-                while (servidorBluetoothActivo && serverSocketBluetooth != null) {
+            try (BluetoothServerSocket serverSocketBluetooth = adapter.listenUsingRfcommWithServiceRecord("SensoresBluetoothP2P", UUID_SPP_DEFAULT)) {
+                while (servidorBluetoothActivo) {
                     BluetoothSocket socket = serverSocketBluetooth.accept();
                     if (socket != null) {
                         executorRed.execute(() -> atenderClienteBluetooth(socket));
@@ -537,6 +593,9 @@ public class SensoresBluetoothRepository implements SensorEventListener {
         });
     }
 
+    /**
+     * Agrega un nuevo paquete recibido a la lista en memoria y actualiza el LiveData.
+     */
     private synchronized void agregarMensajeP2P(PaqueteP2PDto paquete) {
         List<PaqueteP2PDto> lista = mensajesP2PLiveData.getValue();
         if (lista == null) lista = new ArrayList<>();
